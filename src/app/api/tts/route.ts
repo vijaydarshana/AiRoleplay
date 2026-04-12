@@ -1,18 +1,13 @@
-/**
- * CONTROLLER: TTS (Text-to-Speech)
- * Handles POST /api/tts
- * Uses ElevenLabs exclusively via ELEVENLABS_API_KEY env variable.
- */
 
 import { NextRequest, NextResponse } from 'next/server';
 
-// Default ElevenLabs voice IDs (well-known pre-made voices)
+
 const VOICE_MAP: Record<string, string> = {
-  // Indian accent voices (primary)
+ 
   riya:      'mActWQg9kibLro6Z2ouY',  // Riya Rao  – Indian female, warm & conversational (default)
   raju:      'hDMBFBpfBRLBGPKMXbFN',  // Raju      – Indian male, authentic & relatable
   ruhaan:    'ZF6FPAbjXT4488VcRRnw',  // Ruhaan    – Indian male, clear & cheerful
-  // Other voices
+
   aria:      '9BWtsMINqrJLrRacOk9x',  // Aria      – expressive & human-sounding (female)
   rachel:    '21m00Tcm4TlvDq8ikWAM',  // Rachel    – calm & natural (female)
   sarah:     'EXAVITQu4vr4xnSDxMaL',  // Sarah     – warm & conversational (female)
@@ -23,7 +18,6 @@ const VOICE_MAP: Record<string, string> = {
   jessica:   'cgSgspJ2msm6clMCkdW9',  // Jessica   – expressive & bright (female)
 };
 
-/** GET /api/tts — returns whether the server has ElevenLabs configured */
 export async function GET() {
   const hasServerKey = !!(
     process.env.ELEVENLABS_API_KEY &&
@@ -54,7 +48,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'text exceeds maximum length of 5000 characters' }, { status: 400 });
     }
 
-    // Use server env key directly — no user-provided key fallback, no setup prompts
+   
     const apiKey = process.env.ELEVENLABS_API_KEY?.trim();
 
     if (!apiKey || apiKey === 'your-elevenlabs-api-key-here') {
@@ -63,7 +57,7 @@ export async function POST(req: NextRequest) {
 
     const voiceId = VOICE_MAP[voice.toLowerCase()] ?? voice;
 
-    // Extract speed and pitch from body (only used for Indian voices)
+    
     const bodyAny = body as { text?: string; voice?: string; speed?: number; pitch?: number };
     const speed = typeof bodyAny.speed === 'number' ? Math.max(0.5, Math.min(2.0, bodyAny.speed)) : 1.0;
     const pitch = typeof bodyAny.pitch === 'number' ? Math.max(-20, Math.min(20, bodyAny.pitch)) : 0;

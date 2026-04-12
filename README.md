@@ -2,7 +2,7 @@
 
 A voice-powered roleplay assessment tool for telecom store executives. Practice real customer scenarios with an AI customer (powered by Claude), get scored instantly across 5 performance criteria, and improve your customer service skills.
 
-🌐 **Live Demo**: [https://roleplayas9191.builtwithrocket.new](https://roleplayas9191.builtwithrocket.new)
+🌐 **Live Demo**: https://ai-roleplay-42kd-phnpnuqsb-vijays-projects-cd1cd2c8.vercel.app/home-screen
 
 ---
 
@@ -67,19 +67,18 @@ npm install
 
 ### 2. Configure Environment Variables
 
-Copy `.env.local.example` to `.env.local` and fill in your keys:
 
 ```bash
-cp .env.local.example .env.local
+cp  .env.local
 ```
 
 Required keys:
 
-| Variable | Purpose | Where to get it |
-|---|---|---|
-| `ANTHROPIC_API_KEY` | Claude AI for chat & evaluation | [console.anthropic.com](https://console.anthropic.com) |
-| `OPENAI_API_KEY` | Whisper speech-to-text | [platform.openai.com](https://platform.openai.com) |
-| `ELEVENLABS_API_KEY` | Text-to-speech voices | [elevenlabs.io/app/settings/api-keys](https://elevenlabs.io/app/settings/api-keys) |
+
+ `ANTHROPIC_API_KEY` | Claude AI for chat & evaluation |
+| `OPENAI_API_KEY` | Whisper speech-to-text | 
+
+| `ELEVENLABS_API_KEY` | Text-to-speech voices | 
 
 Optional (for cloud session storage):
 
@@ -120,19 +119,9 @@ npm run start
 
 ---
 
-## 📊 Scoring Criteria
 
-| Criteria | Weight | What's Evaluated |
-|---|---|---|
-| Communication Clarity | 25% | Clear, concise, accurate information |
-| Empathy & Emotional Intelligence | 20% | Acknowledging customer emotions |
-| Process Adherence | 25% | Following the 7-step service protocol |
-| Problem Resolution | 20% | Effectively solving the customer's issue |
-| Professionalism & Courtesy | 10% | Tone, language, closing |
 
-Scoring is **strict and fair** — 70+ requires genuinely good performance. Scores are not inflated.
 
----
 
 ## 🔒 Security Notes
 
