@@ -4,32 +4,40 @@
  * Used by view components — never calls ElevenLabs directly.
  */
 
-export type TTSVoice = 'rachel' | 'adam' | 'bella' | 'elli' | 'josh' | 'sam';
+export type TTSVoice = 'riya' | 'raju' | 'ruhaan' | 'aria' | 'rachel' | 'sarah' | 'charlotte' | 'alice' | 'bill' | 'george' | 'jessica';
 
 export interface TTSRequest {
   text: string;
   voice?: TTSVoice;
+  speed?: number;
+  pitch?: number;
 }
 
-const STORAGE_KEY = 'elevenlabs_api_key';
+/** Check if the server already has an ElevenLabs key configured (cached per session) */
+let serverKeyStatusCache: boolean | null = null;
 
-function getUserApiKey(): string | null {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem(STORAGE_KEY);
+export async function checkServerHasElevenLabsKey(): Promise<boolean> {
+  if (serverKeyStatusCache !== null) return serverKeyStatusCache;
+  try {
+    let res = await fetch('/api/tts', { method: 'GET' });
+    if (res.ok) {
+      const data = await res.json() as { hasServerKey?: boolean };
+      serverKeyStatusCache = data.hasServerKey ?? false;
+      return serverKeyStatusCache;
+    }
+  } catch {
+    // ignore
+  }
+  serverKeyStatusCache = true; // assume configured if check fails
+  return true;
 }
 
 export async function fetchTTSAudio(request: TTSRequest): Promise<Blob> {
-  const userKey = getUserApiKey();
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (userKey) {
-    headers['x-elevenlabs-key'] = userKey;
-  }
-
   let res: Response;
   try {
     res = await fetch('/api/tts', {
       method: 'POST',
-      headers,
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),
     });
   } catch {
@@ -38,17 +46,13 @@ export async function fetchTTSAudio(request: TTSRequest): Promise<Blob> {
 
   if (!res.ok) {
     let errMessage = 'TTS failed';
-    let needsSetup = false;
     try {
-      const err = await res.json() as { error?: string; needsSetup?: boolean };
+      const err = await res.json() as { error?: string };
       errMessage = err.error ?? errMessage;
-      needsSetup = err.needsSetup ?? false;
     } catch {
       // ignore JSON parse failure
     }
-    const error = new Error(errMessage) as Error & { needsSetup?: boolean };
-    error.needsSetup = needsSetup;
-    throw error;
+    throw new Error(errMessage);
   }
 
   const blob = await res.blob();

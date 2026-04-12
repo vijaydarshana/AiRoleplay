@@ -14,8 +14,8 @@ export default function DownloadReport({ session }: Props) {
   const handleDownload = async () => {
     setDownloading(true);
     try {
-      // Build a printable HTML report and trigger download as HTML file
-      // BACKEND INTEGRATION POINT: Replace with server-side PDF generation for production
+      const html2pdf = (await import('html2pdf.js')).default;
+
       const formatDate = (ts: number) =>
         new Date(ts).toLocaleDateString('en-IN', {
           day: 'numeric', month: 'long', year: 'numeric',
@@ -43,13 +43,9 @@ export default function DownloadReport({ session }: Props) {
       const transcriptRows = session.transcript
         .map(
           (t) => `
-          <div style="margin-bottom:12px;display:flex;gap:10px;flex-direction:${t.speaker === 'candidate' ? 'row-reverse' : 'row'};">
-            <div style="flex-shrink:0;width:32px;height:32px;border-radius:50%;background:${t.speaker === 'ai' ? '#4f6ef7' : '#10b981'};display:flex;align-items:center;justify-content:center;color:white;font-size:10px;font-weight:700;">
-              ${t.speaker === 'ai' ? session.scenarioTitle.charAt(0) : 'ME'}
-            </div>
-            <div style="max-width:70%;background:${t.speaker === 'ai' ? '#f1f5f9' : '#eff6ff'};border-radius:12px;padding:10px 14px;font-size:13px;color:#334155;line-height:1.5;">
-              ${t.text}
-            </div>
+          <div style="margin-bottom:12px;padding:10px 14px;background:${t.speaker === 'ai' ? '#f1f5f9' : '#eff6ff'};border-radius:8px;font-size:13px;color:#334155;line-height:1.5;">
+            <span style="font-weight:700;color:${t.speaker === 'ai' ? '#4f6ef7' : '#10b981'};margin-right:8px;">${t.speaker === 'ai' ? session.scenarioTitle : 'You'}:</span>
+            ${t.text}
           </div>`
         )
         .join('');
@@ -77,7 +73,6 @@ export default function DownloadReport({ session }: Props) {
   .section { margin-bottom: 32px; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th { background: #f8fafc; padding: 10px 12px; text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; border-bottom: 2px solid #e2e8f0; }
-  @media print { body { padding: 20px; } }
 </style>
 </head>
 <body>
@@ -148,18 +143,28 @@ export default function DownloadReport({ session }: Props) {
 </body>
 </html>`;
 
-      const blob = new Blob([html], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `roleplay-report-${session.scenarioId}-${Date.now()}.html`;
-      a.click();
-      URL.revokeObjectURL(url);
+      const container = document.createElement('div');
+      container.innerHTML = html;
+      container.style.position = 'absolute';
+      container.style.left = '-9999px';
+      document.body.appendChild(container);
 
-      toast.success('Report downloaded! Open in browser and print to PDF.');
+      await html2pdf()
+        .set({
+          margin: [10, 10, 10, 10],
+          filename: `roleplay-report-${session.scenarioId}-${Date.now()}.pdf`,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true, logging: false },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        })
+        .from(container)
+        .save();
+
+      document.body.removeChild(container);
+      toast.success('PDF report downloaded successfully!');
     } catch (err) {
       console.error('Download error:', err);
-      toast.error('Failed to generate report. Please try again.');
+      toast.error('Failed to generate PDF. Please try again.');
     } finally {
       setDownloading(false);
     }
@@ -200,12 +205,12 @@ export default function DownloadReport({ session }: Props) {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
                 </svg>
-                <span>Generating...</span>
+                <span>Generating PDF...</span>
               </>
             ) : (
               <>
                 <Download size={14} />
-                <span>Download Report</span>
+                <span>Download PDF</span>
               </>
             )}
           </button>

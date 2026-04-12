@@ -59,7 +59,10 @@ export default function FeedbackPanel({ score }: Props) {
                 </div>
 
                 <div className="flex items-center gap-3 flex-shrink-0">
-                  <span className="text-2xl font-bold font-mono-data text-slate-800">{criterion.score}</span>
+                  <div className="text-right">
+                    <span className="text-2xl font-bold text-slate-800">{criterion.score}%</span>
+                    <div className="text-xs text-slate-400 text-right">/ 100</div>
+                  </div>
                   {isOpen ? (
                     <ChevronUp size={16} className="text-slate-400" />
                   ) : (

@@ -7,11 +7,6 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-export async function GET() {
-  const hasEnvKey = !!(process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_API_KEY.trim().length > 0);
-  return NextResponse.json({ configured: hasEnvKey });
-}
-
 export async function POST(req: NextRequest) {
   try {
     let body: { apiKey?: string };
