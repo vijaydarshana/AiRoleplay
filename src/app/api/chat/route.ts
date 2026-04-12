@@ -1,8 +1,3 @@
-/**
- * CONTROLLER: Chat
- * Handles POST /api/chat
- * Receives conversation context, delegates to prompt service and Anthropic SDK.
- */
 
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
@@ -10,14 +5,14 @@ import { buildSystemPrompt } from '@/backend/services/prompt.service';
 import { findScenario } from '@/backend/models/scenario.model';
 import type { TranscriptTurn } from '@/types';
 
-/** Resolve the correct Anthropic key regardless of env variable swap */
+
 function resolveAnthropicKey(): string | undefined {
   const key1 = process.env.ANTHROPIC_API_KEY;
   const key2 = process.env.OPENAI_API_KEY;
-  // Anthropic keys start with "sk-ant-"
+
   if (key1 && key1.startsWith('sk-ant-')) return key1;
   if (key2 && key2.startsWith('sk-ant-')) return key2;
-  return key1; // fallback
+  return key1; 
 }
 
 const anthropic = new Anthropic({

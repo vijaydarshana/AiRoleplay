@@ -1,8 +1,4 @@
-/**
- * CONTROLLER: Evaluate
- * Handles POST /api/evaluate
- * Receives session data, delegates to prompt service and Anthropic SDK.
- */
+
 
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';

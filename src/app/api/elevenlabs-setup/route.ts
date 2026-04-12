@@ -1,9 +1,4 @@
-/**
- * CONTROLLER: ElevenLabs API Key Verification
- * POST /api/elevenlabs-setup
- * Verifies a user-provided ElevenLabs API key by making a lightweight call.
- * The key is NOT stored server-side — it's only used for verification.
- */
+
 
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -21,7 +16,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'API key is required' }, { status: 400 });
     }
 
-    // Verify by fetching the user's voice list — lightweight, read-only endpoint
+  
     const res = await fetch('https://api.elevenlabs.io/v1/user', {
       method: 'GET',
       headers: {

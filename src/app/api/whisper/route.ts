@@ -1,15 +1,10 @@
-/**
- * CONTROLLER: Whisper Speech-to-Text
- * Handles POST /api/whisper
- * Receives audio blob (multipart/form-data), transcribes via OpenAI Whisper API.
- * Supports webm (Chrome/Android), mp4 (iOS Safari), and ogg formats.
- */
+
 
 import { NextRequest, NextResponse } from 'next/server';
 
-/** Resolve the correct OpenAI key regardless of env variable swap */
+
 function resolveOpenAIKey(): string | undefined {
-  // Prefer a dedicated Whisper/OpenAI key if set
+  
   const whisperKey = process.env.WHISPER_API_KEY;
   if (whisperKey && whisperKey.trim() && !whisperKey.startsWith('your-')) {
     return whisperKey.trim();
@@ -17,7 +12,7 @@ function resolveOpenAIKey(): string | undefined {
   const openaiKey = process.env.OPENAI_API_KEY;
   if (!openaiKey) return undefined;
   const trimmed = openaiKey.trim();
-  // Guard: reject Anthropic keys accidentally placed in OPENAI_API_KEY
+  
   if (trimmed.startsWith('sk-ant-')) {
     console.error('[WhisperController] OPENAI_API_KEY contains an Anthropic key. Set WHISPER_API_KEY with your OpenAI key.');
     return undefined;
@@ -25,17 +20,17 @@ function resolveOpenAIKey(): string | undefined {
   return trimmed;
 }
 
-/** Map MIME type to a file extension Whisper accepts */
+
 function getFileExtension(blob: Blob, fallbackName: string): string {
   const type = blob.type.toLowerCase();
   if (type.includes('mp4') || type.includes('m4a')) return 'mp4';
   if (type.includes('ogg')) return 'ogg';
   if (type.includes('wav')) return 'wav';
   if (type.includes('flac')) return 'flac';
-  // Check filename hint
+ 
   if (fallbackName.endsWith('.mp4')) return 'mp4';
   if (fallbackName.endsWith('.ogg')) return 'ogg';
-  // Default to webm (Chrome/Android)
+  
   return 'webm';
 }
 
@@ -54,7 +49,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'audio file is required in form data' }, { status: 400 });
     }
 
-    // 25MB limit (Whisper's max)
     const MAX_SIZE = 25 * 1024 * 1024;
     if (audioFile.size > MAX_SIZE) {
       return NextResponse.json({ error: 'Audio file exceeds 25MB limit. Please record a shorter clip.' }, { status: 413 });
