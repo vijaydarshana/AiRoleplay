@@ -18,7 +18,6 @@ import ProtocolChecklist from './ProtocolChecklist';
 import SessionHeader from './SessionHeader';
 import AIStatusBadge from './AIStatusBadge';
 import EndSessionModal from './EndSessionModal';
-import ElevenLabsSetupModal from '@/components/ui/ElevenLabsSetupModal';
 import { ClipboardList, X } from 'lucide-react';
 
 /** Unlock AudioContext on mobile — must be called from a user gesture */
@@ -116,12 +115,15 @@ export default function RoleplayScreenClient() {
   const [showProtocol, setShowProtocol] = useState(false);
   const [lastAiText, setLastAiText] = useState<string | null>(null);
   const [isReplaying, setIsReplaying] = useState(false);
-  const [selectedVoice, setSelectedVoice] = useState<TTSVoice>('bella');
+  const [selectedVoice, setSelectedVoice] = useState<TTSVoice>('riya');
   const [fatalError, setFatalError] = useState<string | null>(null);
-  const [showSetupModal, setShowSetupModal] = useState(false);
-  const [pendingTTSText, setPendingTTSText] = useState<string | null>(null);
+  const [voiceSpeed, setVoiceSpeed] = useState<number>(1.0);
+  const [voicePitch, setVoicePitch] = useState<number>(0);
   const replayAudioRef = useRef<HTMLAudioElement | null>(null);
-  const selectedVoiceRef = useRef<TTSVoice>('bella');
+  const selectedVoiceRef = useRef<TTSVoice>('riya');
+  const voiceSpeedRef = useRef<number>(1.0);
+  const voicePitchRef = useRef<number>(0);
+  const pendingAITurnRef = useRef<TranscriptTurn[] | null>(null);
 
   const timer = useTimer();
   const speech = useSpeechRecognition();
@@ -145,15 +147,33 @@ export default function RoleplayScreenClient() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scenario]);
 
-  // Update interim text while recording - Whisper returns text only after stop,
-  // so show a "Recording..." indicator while isListening is true
+  // Fire AI turn when pendingAITurnRef is set (avoids calling async inside setState updater)
+  useEffect(() => {
+    if (pendingAITurnRef.current !== null) {
+      const turns = pendingAITurnRef.current;
+      pendingAITurnRef.current = null;
+      triggerAITurn(turns);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transcript]);
+
+  // Update interim text while recording
   useEffect(() => {
     if (speech.isListening) {
-      setInterimText('🎙 Recording...');
+      // Web Speech API: show live transcript; MediaRecorder: show recording indicator
+      const live = speech.transcript;
+      setInterimText(live ? `🎙 ${live}` : '🎙 Listening… speak now');
     } else {
       setInterimText('');
     }
-  }, [speech.isListening]);
+  }, [speech.isListening, speech.transcript]);
+
+  // Sync aiStatus: if mic stops unexpectedly (e.g. permission denied), reset to idle
+  useEffect(() => {
+    if (!speech.isListening && aiStatus === 'listening') {
+      setAiStatus('idle');
+    }
+  }, [speech.isListening, aiStatus]);
 
   const checkProtocol = useCallback((text: string) => {
     const lower = text.toLowerCase();
@@ -190,20 +210,11 @@ export default function RoleplayScreenClient() {
         setAiStatus('speaking');
 
         try {
-          const blob = await fetchTTSAudio({ text, voice: selectedVoiceRef.current });
+          const blob = await fetchTTSAudio({ text, voice: selectedVoiceRef.current, speed: voiceSpeedRef.current, pitch: voicePitchRef.current });
           await playAudioBlob(blob, replayAudioRef, () => synth.speak(text));
         } catch (ttsErr) {
-          const err = ttsErr as Error & { needsSetup?: boolean };
-          if (err.needsSetup) {
-            // Show setup modal instead of fatal error
-            setPendingTTSText(text);
-            setShowSetupModal(true);
-            // Fall back to browser synthesis while user sets up
-            try { await synth.speak(text); } catch { /* silent */ }
-          } else {
-            console.warn('[RoleplayScreen] TTS failed, falling back to browser synthesis:', ttsErr);
-            try { await synth.speak(text); } catch { /* silent */ }
-          }
+          console.warn('[RoleplayScreen] TTS failed, falling back to browser synthesis:', ttsErr);
+          try { await synth.speak(text); } catch { /* silent */ }
         }
 
         setAiStatus('idle');
@@ -229,14 +240,10 @@ export default function RoleplayScreenClient() {
     setAiStatus('speaking');
 
     try {
-      const blob = await fetchTTSAudio({ text: lastAiText, voice: selectedVoiceRef.current });
+      const blob = await fetchTTSAudio({ text: lastAiText, voice: selectedVoiceRef.current, speed: voiceSpeedRef.current, pitch: voicePitchRef.current });
       await playAudioBlob(blob, replayAudioRef, () => synth.speak(lastAiText!));
     } catch (err) {
-      const ttsErr = err as Error & { needsSetup?: boolean };
-      if (ttsErr.needsSetup) {
-        setPendingTTSText(lastAiText);
-        setShowSetupModal(true);
-      }
+      console.warn('[RoleplayScreen] Replay TTS failed, falling back to browser synthesis:', err);
       try { await synth.speak(lastAiText); } catch {
         toast.error('Replay failed. Please try again.');
       }
@@ -247,40 +254,49 @@ export default function RoleplayScreenClient() {
   }, [lastAiText, isReplaying, aiStatus, synth]);
 
   const handleStartRecording = useCallback(async () => {
-    if (aiStatus !== 'idle' || speech.isListening) return;
+    if ((aiStatus !== 'idle' && aiStatus !== 'speaking') || speech.isListening) return;
     synth.stop();
+    // Stop any playing TTS audio
+    if (replayAudioRef.current) {
+      replayAudioRef.current.pause();
+      replayAudioRef.current.currentTime = 0;
+    }
+    isProcessingRef.current = false;
     // Unlock AudioContext on first user gesture (required on iOS)
     await unlockAudioContext();
     speech.startListening();
+    // Set listening status — the hook sets isListening=true once mic is granted
     setAiStatus('listening');
   }, [aiStatus, speech, synth]);
 
-  const handleStopRecording = useCallback(async () => {
+  const handleStopRecording = useCallback(() => {
     if (!speech.isListening) return;
+    setInterimText('⏳ Transcribing…');
     setAiStatus('processing');
-    const spokenText = await speech.stopListening();
-    setInterimText('');
 
-    if (!spokenText.trim()) {
-      setAiStatus('idle');
-      return;
-    }
+    speech.stopListening((spokenText: string) => {
+      setInterimText('');
+      if (!spokenText.trim()) {
+        setAiStatus('idle');
+        return;
+      }
 
-    const candidateTurn: TranscriptTurn = {
-      id: `turn-candidate-${Date.now()}`,
-      speaker: 'candidate',
-      text: spokenText.trim(),
-      timestamp: Date.now(),
-    };
+      const candidateTurn: TranscriptTurn = {
+        id: `turn-candidate-${Date.now()}`,
+        speaker: 'candidate',
+        text: spokenText.trim(),
+        timestamp: Date.now(),
+      };
 
-    checkProtocol(spokenText);
+      checkProtocol(spokenText);
 
-    setTranscript((prev) => {
-      const updated = [...prev, candidateTurn];
-      triggerAITurn(updated);
-      return updated;
+      setTranscript((prev) => {
+        const updated = [...prev, candidateTurn];
+        pendingAITurnRef.current = updated;
+        return updated;
+      });
     });
-  }, [speech, checkProtocol, triggerAITurn]);
+  }, [speech, checkProtocol]);
 
   const handleEndSession = useCallback(() => {
     setShowEndModal(true);
@@ -315,6 +331,16 @@ export default function RoleplayScreenClient() {
     selectedVoiceRef.current = voice;
   }, []);
 
+  const handleSpeedChange = useCallback((value: number) => {
+    setVoiceSpeed(value);
+    voiceSpeedRef.current = value;
+  }, []);
+
+  const handlePitchChange = useCallback((value: number) => {
+    setVoicePitch(value);
+    voicePitchRef.current = value;
+  }, []);
+
   const handleStopAudio = useCallback(() => {
     // Stop browser speech synthesis
     synth.stop();
@@ -327,17 +353,6 @@ export default function RoleplayScreenClient() {
     setAiStatus('idle');
     isProcessingRef.current = false;
   }, [synth]);
-
-  const handleSetupSaved = useCallback(() => {
-    // Retry TTS with the newly saved key
-    if (pendingTTSText) {
-      const textToPlay = pendingTTSText;
-      setPendingTTSText(null);
-      fetchTTSAudio({ text: textToPlay, voice: selectedVoiceRef.current })
-        .then((blob) => playAudioBlob(blob, replayAudioRef, () => synth.speak(textToPlay)))
-        .catch(() => { /* silent — already played via browser synth */ });
-    }
-  }, [pendingTTSText, synth]);
 
   if (!scenario) {
     return (
@@ -437,6 +452,10 @@ export default function RoleplayScreenClient() {
             onVoiceChange={handleVoiceChange}
             selectedVoice={selectedVoice}
             onStopAudio={handleStopAudio}
+            speed={voiceSpeed}
+            pitch={voicePitch}
+            onSpeedChange={handleSpeedChange}
+            onPitchChange={handlePitchChange}
           />
         </div>
 
@@ -475,12 +494,6 @@ export default function RoleplayScreenClient() {
           onCancel={() => setShowEndModal(false)}
         />
       )}
-
-      <ElevenLabsSetupModal
-        isOpen={showSetupModal}
-        onClose={() => setShowSetupModal(false)}
-        onSaved={handleSetupSaved}
-      />
     </div>
   );
 }

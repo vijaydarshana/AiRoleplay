@@ -9,8 +9,7 @@ import CustomerPersonaCard from './CustomerPersonaCard';
 import ProtocolPreview from './ProtocolPreview';
 import SessionHistoryPanel from './SessionHistoryPanel';
 import AppLogo from '@/components/ui/AppLogo';
-import ElevenLabsSetupModal, { getStoredElevenLabsKey } from '@/components/ui/ElevenLabsSetupModal';
-import { Play, BarChart2, ChevronRight, ChevronDown, ChevronUp, Sparkles, Zap, Key, CheckCircle } from 'lucide-react';
+import { Play, BarChart2, ChevronRight, ChevronDown, ChevronUp, Sparkles, Zap } from 'lucide-react';
 
 export default function HomeScreenClient() {
   const router = useRouter();
@@ -18,22 +17,9 @@ export default function HomeScreenClient() {
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [starting, setStarting] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
-  const [showSetupModal, setShowSetupModal] = useState(false);
-  const [hasApiKey, setHasApiKey] = useState(false);
 
   useEffect(() => {
     getSessionsWithCloud().then(setSessions).catch(() => {});
-    // Check localStorage first, then fall back to server-side env key check
-    if (getStoredElevenLabsKey()) {
-      setHasApiKey(true);
-    } else {
-      fetch('/api/elevenlabs-setup')
-        .then((r) => r.json())
-        .then((data: { configured?: boolean }) => {
-          if (data.configured) setHasApiKey(true);
-        })
-        .catch(() => {});
-    }
   }, []);
 
   const handleStart = () => {
@@ -43,10 +29,6 @@ export default function HomeScreenClient() {
     setTimeout(() => {
       router.push('/roleplay-screen');
     }, 300);
-  };
-
-  const handleSetupSaved = () => {
-    setHasApiKey(true);
   };
 
   const difficultyColor: Record<string, string> = {
@@ -71,18 +53,6 @@ export default function HomeScreenClient() {
             </span>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* ElevenLabs setup button */}
-            <button
-              onClick={() => setShowSetupModal(true)}
-              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold border transition-colors ${
-                hasApiKey
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100' :'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
-              }`}
-              title={hasApiKey ? 'ElevenLabs configured — click to update' : 'Set up ElevenLabs voice'}
-            >
-              {hasApiKey ? <CheckCircle size={12} /> : <Key size={12} />}
-              <span className="hidden sm:inline">{hasApiKey ? 'Voice Ready' : 'Setup Voice'}</span>
-            </button>
             <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-full px-3 py-1.5">
               <BarChart2 size={13} className="text-indigo-500" />
               <span className="text-xs font-semibold text-slate-700">{sessions.length} session{sessions.length !== 1 ? 's' : ''}</span>
@@ -90,26 +60,6 @@ export default function HomeScreenClient() {
           </div>
         </div>
       </header>
-
-      {/* ElevenLabs setup banner (shown when key not configured) */}
-      {!hasApiKey && (
-        <div className="bg-amber-50 border-b border-amber-200">
-          <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 py-2.5 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Key size={13} className="text-amber-600 flex-shrink-0" />
-              <p className="text-xs text-amber-800">
-                <span className="font-semibold">Set up ElevenLabs</span> for realistic AI voice — free tier available.
-              </p>
-            </div>
-            <button
-              onClick={() => setShowSetupModal(true)}
-              className="flex-shrink-0 text-xs font-bold text-amber-700 hover:text-amber-900 underline underline-offset-2 transition-colors"
-            >
-              Configure →
-            </button>
-          </div>
-        </div>
-      )}
 
       <main className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-16 py-6 sm:py-10 lg:py-14">
         {/* Hero Section */}
@@ -288,12 +238,6 @@ export default function HomeScreenClient() {
           </div>
         </div>
       </main>
-
-      <ElevenLabsSetupModal
-        isOpen={showSetupModal}
-        onClose={() => setShowSetupModal(false)}
-        onSaved={handleSetupSaved}
-      />
     </div>
   );
 }

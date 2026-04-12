@@ -30,10 +30,13 @@ export default function ScoreScreenClient() {
       const historyViewId = sessionStorage.getItem('view_session_id');
       if (historyViewId) {
         sessionStorage.removeItem('view_session_id');
-        const hist = await getSessionWithCloud(historyViewId);
+        // Fetch session and history in parallel
+        const [hist, allSessions] = await Promise.all([
+          getSessionWithCloud(historyViewId),
+          getSessionsWithCloud(),
+        ]);
         if (hist) {
           setSession(hist);
-          const allSessions = await getSessionsWithCloud();
           setHistory(allSessions);
           setLoading(false);
           setViewingHistoryId(historyViewId);
@@ -74,14 +77,16 @@ export default function ScoreScreenClient() {
         clearPendingSession();
         sessionStorage.removeItem('pending_protocol_completion');
 
+        // Show session immediately, fetch history in background
         setSession(completeSession);
-        const allSessions = await getSessionsWithCloud();
-        setHistory(allSessions);
+        setLoading(false);
         toast.success('Session evaluated and saved!');
+
+        // Fetch history after UI is already visible
+        getSessionsWithCloud().then(setHistory).catch(() => {});
       } catch (err) {
         console.error('Evaluation error:', err);
         setError(err instanceof Error ? err.message : 'Evaluation failed. Please check your API key.');
-      } finally {
         setLoading(false);
       }
     };

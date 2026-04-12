@@ -1,16 +1,21 @@
 'use client';
 import type { AIStatus } from '@/types';
 import type { TTSVoice } from '@/frontend/services/tts.service';
-import { Mic, AlertCircle, PhoneOff, RotateCcw } from 'lucide-react';
+import { Mic, AlertCircle, PhoneOff, RotateCcw, StopCircle } from 'lucide-react';
 
 const TTS_VOICES: { id: TTSVoice; label: string; description: string }[] = [
-  { id: 'rachel', label: 'Rachel', description: 'Calm & professional' },
-  { id: 'adam',   label: 'Adam',   description: 'Deep & authoritative' },
-  { id: 'bella',  label: 'Bella',  description: 'Warm & friendly' },
-  { id: 'elli',   label: 'Elli',   description: 'Young & energetic' },
-  { id: 'josh',   label: 'Josh',   description: 'Conversational' },
-  { id: 'sam',    label: 'Sam',    description: 'Neutral & clear' },
+  { id: 'riya',      label: '🇮🇳 Riya ♀',    description: 'Indian female – warm & conversational' },
+  { id: 'raju',      label: '🇮🇳 Raju ♂',    description: 'Indian male – authentic & relatable' },
+  { id: 'ruhaan',    label: '🇮🇳 Ruhaan ♂',  description: 'Indian male – clear & cheerful' },
+  { id: 'aria',      label: 'Aria ♀',         description: 'Expressive & most human-sounding' },
+  { id: 'charlotte', label: 'Charlotte ♀',    description: 'Seductive & whispery' },
+  { id: 'alice',     label: 'Alice ♀',        description: 'Confident & British' },
+  { id: 'bill',      label: 'Bill ♂',         description: 'Trustworthy & deep' },
+  { id: 'george',    label: 'George ♂',       description: 'Warm & authoritative' },
+  { id: 'jessica',   label: 'Jessica ♀',      description: 'Expressive & bright' },
 ];
+
+const INDIAN_VOICES: TTSVoice[] = ['riya', 'raju', 'ruhaan'];
 
 export type { TTSVoice };
 
@@ -28,6 +33,10 @@ interface Props {
   selectedVoice: TTSVoice;
   onVoiceChange: (voice: TTSVoice) => void;
   onStopAudio: () => void;
+  speed: number;
+  pitch: number;
+  onSpeedChange: (value: number) => void;
+  onPitchChange: (value: number) => void;
 }
 
 export default function VoiceControls({
@@ -44,9 +53,21 @@ export default function VoiceControls({
   selectedVoice,
   onVoiceChange,
   onStopAudio,
+  speed,
+  pitch,
+  onSpeedChange,
+  onPitchChange,
 }: Props) {
-  const canStart = isSupported && (aiStatus === 'idle') && !isListening;
+  const canStart = isSupported && (aiStatus === 'idle' || aiStatus === 'speaking') && !isListening;
   const canStop = isSupported && isListening;
+  const isIndianVoice = INDIAN_VOICES.includes(selectedVoice);
+
+  const handleMicClick = () => {
+    if (aiStatus === 'speaking') {
+      onStopAudio();
+    }
+    onStartRecording();
+  };
 
   return (
     <div className="flex-shrink-0 border-t border-slate-800/80 bg-slate-950 px-4 lg:px-8 py-4 sm:py-5">
@@ -99,6 +120,69 @@ export default function VoiceControls({
         </p>
       </div>
 
+      {/* Speed & Pitch controls — only for Indian voices */}
+      {isIndianVoice && (
+        <div className="mb-4 sm:mb-5 bg-slate-900/60 border border-slate-800/60 rounded-xl px-4 py-3">
+          <div className="flex items-center justify-center gap-1.5 mb-3">
+            <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-amber-400">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M12 8v4l3 3"/>
+            </svg>
+            <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Delivery Controls</span>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            {/* Speed */}
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Speed</span>
+                <span className="text-[10px] text-amber-400 font-bold font-mono">
+                  {speed === 1.0 ? 'Normal' : speed < 1.0 ? `${Math.round((1 - speed) * 100)}% slower` : `${Math.round((speed - 1) * 100)}% faster`}
+                </span>
+              </div>
+              <input
+                type="range"
+                min={0.5}
+                max={2.0}
+                step={0.1}
+                value={speed}
+                onChange={(e) => onSpeedChange(parseFloat(e.target.value))}
+                className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-amber-500 bg-slate-700"
+                title={`Speed: ${speed}x`}
+              />
+              <div className="flex justify-between text-[9px] text-slate-600">
+                <span>Slow</span>
+                <span>Normal</span>
+                <span>Fast</span>
+              </div>
+            </div>
+            {/* Pitch */}
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Pitch</span>
+                <span className="text-[10px] text-sky-400 font-bold font-mono">
+                  {pitch === 0 ? 'Normal' : pitch > 0 ? `+${pitch}` : `${pitch}`}
+                </span>
+              </div>
+              <input
+                type="range"
+                min={-10}
+                max={10}
+                step={1}
+                value={pitch}
+                onChange={(e) => onPitchChange(parseInt(e.target.value, 10))}
+                className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-sky-500 bg-slate-700"
+                title={`Pitch: ${pitch}`}
+              />
+              <div className="flex justify-between text-[9px] text-slate-600">
+                <span>Low</span>
+                <span>Normal</span>
+                <span>High</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Divider */}
       <div className="h-px bg-slate-800/60 mb-4 sm:mb-5" />
 
@@ -117,19 +201,17 @@ export default function VoiceControls({
           </div>
         )}
 
-        {/* Stop Audio button */}
-        {aiStatus === 'speaking' && (
+        {/* Stop AI button — shown while AI is speaking */}
+        {aiStatus === 'speaking' && !isListening && (
           <div className="flex flex-col items-center gap-2">
             <button
               onClick={onStopAudio}
-              className="w-20 h-20 sm:w-24 sm:h-24 rounded-full flex items-center justify-center bg-amber-500/15 hover:bg-amber-500/30 border-2 border-amber-500/40 hover:border-amber-400/60 transition-all duration-150 active:scale-95 shadow-lg shadow-amber-900/20"
-              title="Stop AI speech"
+              className="w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center bg-orange-600/15 hover:bg-orange-600/30 border border-orange-600/40 hover:border-orange-500/60 transition-all duration-150 active:scale-95"
+              title="Stop AI"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="currentColor" className="text-amber-400">
-                <rect x="6" y="6" width="12" height="12" rx="2.5" />
-              </svg>
+              <StopCircle size={19} className="text-orange-400" />
             </button>
-            <p className="text-[10px] text-amber-500 font-semibold text-center uppercase tracking-wider">Stop</p>
+            <p className="text-[10px] text-orange-400 font-medium text-center uppercase tracking-wider">Stop</p>
           </div>
         )}
 
@@ -138,7 +220,7 @@ export default function VoiceControls({
           <div className="flex flex-col items-center gap-2">
             <div className="relative">
               <button
-                onClick={onStartRecording}
+                onClick={handleMicClick}
                 disabled={!canStart}
                 className={`
                   relative w-20 h-20 sm:w-24 sm:h-24 rounded-full flex items-center justify-center
@@ -154,7 +236,7 @@ export default function VoiceControls({
             </div>
             <p className="text-[10px] text-slate-400 font-medium text-center max-w-[100px] leading-relaxed uppercase tracking-wider">
               {aiStatus === 'processing' ? 'AI thinking...'
-                : aiStatus === 'speaking' ? 'AI speaking...' : isReplaying ? 'Replaying...' : 'Tap to Speak'}
+                : aiStatus === 'speaking' ? 'Tap to Interrupt' : isReplaying ? 'Replaying...' : 'Tap to Speak'}
             </p>
           </div>
         )}

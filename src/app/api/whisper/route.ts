@@ -9,7 +9,20 @@ import { NextRequest, NextResponse } from 'next/server';
 
 /** Resolve the correct OpenAI key regardless of env variable swap */
 function resolveOpenAIKey(): string | undefined {
-  return process.env.OPENAI_API_KEY;
+  // Prefer a dedicated Whisper/OpenAI key if set
+  const whisperKey = process.env.WHISPER_API_KEY;
+  if (whisperKey && whisperKey.trim() && !whisperKey.startsWith('your-')) {
+    return whisperKey.trim();
+  }
+  const openaiKey = process.env.OPENAI_API_KEY;
+  if (!openaiKey) return undefined;
+  const trimmed = openaiKey.trim();
+  // Guard: reject Anthropic keys accidentally placed in OPENAI_API_KEY
+  if (trimmed.startsWith('sk-ant-')) {
+    console.error('[WhisperController] OPENAI_API_KEY contains an Anthropic key. Set WHISPER_API_KEY with your OpenAI key.');
+    return undefined;
+  }
+  return trimmed;
 }
 
 /** Map MIME type to a file extension Whisper accepts */
@@ -65,6 +78,14 @@ export async function POST(req: NextRequest) {
     whisperForm.append('model', 'whisper-1');
     whisperForm.append('language', 'en');
     whisperForm.append('response_format', 'json');
+    // temperature=0.2 gives Whisper slight flexibility to handle quiet/low-volume speech
+    whisperForm.append('temperature', '0.2');
+    // Prompt primes Whisper with domain context so it better recognises
+    // customer-service vocabulary, names, soft/quiet/low-volume and accented speech
+    whisperForm.append(
+      'prompt',
+      'Customer service roleplay conversation. The speaker may speak quietly or softly. Transcribe every word accurately even if the audio is low volume, including filler words like um, uh, okay, yes, no, hello, thank you, sorry.'
+    );
 
     const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
