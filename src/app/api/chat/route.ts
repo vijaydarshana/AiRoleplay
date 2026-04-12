@@ -26,26 +26,35 @@ const anthropic = new Anthropic({
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { scenarioId, transcript } = body as {
-      scenarioId: string;
-      transcript: TranscriptTurn[];
-    };
+    let body: { scenarioId?: string; transcript?: TranscriptTurn[] };
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON in request body' }, { status: 400 });
+    }
 
-    if (!scenarioId || !Array.isArray(transcript)) {
-      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+    const { scenarioId, transcript } = body;
+
+    if (!scenarioId || typeof scenarioId !== 'string') {
+      return NextResponse.json({ error: 'scenarioId is required and must be a string' }, { status: 400 });
+    }
+    if (!Array.isArray(transcript)) {
+      return NextResponse.json({ error: 'transcript must be an array' }, { status: 400 });
+    }
+
+    const apiKey = resolveAnthropicKey();
+    if (!apiKey) {
+      return NextResponse.json({ error: 'Anthropic API key is not configured. Please set ANTHROPIC_API_KEY in your environment.' }, { status: 500 });
     }
 
     const scenario = findScenario(scenarioId);
     const systemPrompt = buildSystemPrompt(scenario);
 
-    // Build conversation history for Claude
     const messages: Anthropic.MessageParam[] = transcript.map((turn) => ({
       role: turn.speaker === 'candidate' ? 'user' : 'assistant',
       content: turn.text,
     }));
 
-    // Ensure the last message is from the user so Claude can respond
     if (messages.length === 0 || messages[messages.length - 1].role === 'assistant') {
       messages.push({
         role: 'user',
@@ -69,8 +78,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ text: aiText });
   } catch (error) {
     console.error('[ChatController] Error:', error);
+
+    if (error instanceof Anthropic.APIError) {
+      if (error.status === 401) {
+        return NextResponse.json({ error: 'Invalid Anthropic API key. Please check your ANTHROPIC_API_KEY.' }, { status: 401 });
+      }
+      if (error.status === 429) {
+        return NextResponse.json({ error: 'Anthropic rate limit reached. Please wait a moment and try again.' }, { status: 429 });
+      }
+      if (error.status === 529) {
+        return NextResponse.json({ error: 'Anthropic API is overloaded. Please try again shortly.' }, { status: 503 });
+      }
+      return NextResponse.json({ error: `Anthropic API error: ${error.message}` }, { status: error.status ?? 500 });
+    }
+
+    if (error instanceof Error && error.message.includes('fetch')) {
+      return NextResponse.json({ error: 'Network error reaching Anthropic. Please check your connection.' }, { status: 503 });
+    }
+
     return NextResponse.json(
-      { error: 'Failed to get AI response. Please check your API key.' },
+      { error: 'Failed to get AI response. Please try again.' },
       { status: 500 }
     );
   }

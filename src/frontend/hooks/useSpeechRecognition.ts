@@ -10,124 +10,171 @@ interface SpeechRecognitionHook {
   error: string | null;
 }
 
-// Web Speech API type declarations
-declare global {
-  interface Window {
-    SpeechRecognition: new () => SpeechRecognitionInstance;
-    webkitSpeechRecognition: new () => SpeechRecognitionInstance;
+/** Pick the best MIME type for the current browser/device */
+function getBestMimeType(): string {
+  if (typeof MediaRecorder === 'undefined') return '';
+  // Prefer webm/opus (Chrome desktop/Android), fall back to mp4 (iOS Safari), then plain webm
+  const candidates = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/mp4',
+    'audio/ogg;codecs=opus',
+  ];
+  for (const type of candidates) {
+    if (MediaRecorder.isTypeSupported(type)) return type;
   }
-}
-
-interface SpeechRecognitionInstance extends EventTarget {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  start(): void;
-  stop(): void;
-  abort(): void;
-  onresult: ((event: SpeechRecognitionEvent) => void) | null;
-  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
-  onend: (() => void) | null;
-}
-
-interface SpeechRecognitionEvent {
-  results: SpeechRecognitionResultList;
-  resultIndex: number;
-}
-
-interface SpeechRecognitionResultList {
-  length: number;
-  item(index: number): SpeechRecognitionResult;
-  [index: number]: SpeechRecognitionResult;
-}
-
-interface SpeechRecognitionResult {
-  isFinal: boolean;
-  [index: number]: SpeechRecognitionAlternative;
-}
-
-interface SpeechRecognitionAlternative {
-  transcript: string;
-  confidence: number;
-}
-
-interface SpeechRecognitionErrorEvent extends Event {
-  error: string;
+  return '';
 }
 
 export function useSpeechRecognition(): SpeechRecognitionHook {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
   const resolveRef = useRef<((value: string) => void) | null>(null);
-  const finalTranscriptRef = useRef('');
+  const streamRef = useRef<MediaStream | null>(null);
+  const mimeTypeRef = useRef<string>('');
 
+  // MediaRecorder is supported in all modern browsers (Chrome, Firefox, Safari 14.1+, Edge)
   const isSupported =
-    typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
+    typeof window !== 'undefined' &&
+    typeof navigator !== 'undefined' &&
+    !!navigator.mediaDevices &&
+    typeof MediaRecorder !== 'undefined';
+
+  const stopStream = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+  }, []);
 
   const startListening = useCallback(() => {
     if (!isSupported) {
-      setError('Speech recognition is not supported in this browser. Please use Chrome.');
+      setError('Microphone access is not supported in this browser. Please use Chrome, Firefox, or Safari.');
       return;
     }
 
     setError(null);
     setTranscript('');
-    finalTranscriptRef.current = '';
+    chunksRef.current = [];
 
-    const SpeechRecognitionClass =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognition = new SpeechRecognitionClass();
+    // Mobile Chrome requires explicit audio constraints for best quality
+    const audioConstraints: MediaStreamConstraints = {
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        sampleRate: 16000,
+        channelCount: 1,
+      },
+    };
 
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'en-IN';
+    navigator.mediaDevices
+      .getUserMedia(audioConstraints)
+      .then((stream) => {
+        streamRef.current = stream;
 
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      let interim = '';
-      let final = finalTranscriptRef.current;
+        const mimeType = getBestMimeType();
+        mimeTypeRef.current = mimeType;
 
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const result = event.results[i];
-        if (result.isFinal) {
-          final += result[0].transcript + ' ';
-        } else {
-          interim += result[0].transcript;
+        let recorder: MediaRecorder;
+        try {
+          recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+        } catch {
+          // Fallback: let browser choose format
+          recorder = new MediaRecorder(stream);
+          mimeTypeRef.current = '';
         }
-      }
+        mediaRecorderRef.current = recorder;
 
-      finalTranscriptRef.current = final;
-      setTranscript(final + interim);
-    };
+        recorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) {
+            chunksRef.current.push(e.data);
+          }
+        };
 
-    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-      if (event.error !== 'no-speech') {
-        setError(`Microphone error: ${event.error}`);
-      }
-      setIsListening(false);
-    };
+        recorder.onstop = async () => {
+          stopStream();
+          setIsListening(false);
 
-    recognition.onend = () => {
-      setIsListening(false);
-      if (resolveRef.current) {
-        resolveRef.current(finalTranscriptRef.current.trim());
-        resolveRef.current = null;
-      }
-    };
+          if (chunksRef.current.length === 0) {
+            resolveRef.current?.('');
+            resolveRef.current = null;
+            return;
+          }
 
-    recognitionRef.current = recognition;
-    recognition.start();
-    setIsListening(true);
-  }, [isSupported]);
+          // Use recorded mime type or fall back to webm
+          const blobType = mimeTypeRef.current || 'audio/webm';
+          const audioBlob = new Blob(chunksRef.current, { type: blobType });
+
+          // Determine file extension for Whisper
+          const ext = blobType.includes('mp4') ? 'mp4' : blobType.includes('ogg') ? 'ogg' : 'webm';
+          const fileName = `audio.${ext}`;
+
+          try {
+            const formData = new FormData();
+            formData.append('audio', audioBlob, fileName);
+
+            const res = await fetch('/api/whisper', {
+              method: 'POST',
+              body: formData,
+            });
+
+            if (!res.ok) {
+              const errData = await res.json().catch(() => ({}));
+              throw new Error((errData as { error?: string })?.error ?? 'Transcription failed');
+            }
+
+            const data = await res.json() as { text?: string };
+            const text: string = data.text ?? '';
+            setTranscript(text);
+            resolveRef.current?.(text);
+          } catch (err) {
+            console.error('[useSpeechRecognition] Whisper error:', err);
+            setError('Transcription failed. Please try again.');
+            resolveRef.current?.('');
+          } finally {
+            resolveRef.current = null;
+          }
+        };
+
+        recorder.onerror = () => {
+          stopStream();
+          setIsListening(false);
+          setError('Recording error. Please try again.');
+          resolveRef.current?.('');
+          resolveRef.current = null;
+        };
+
+        // Use timeslice for mobile — ensures data is collected even on short recordings
+        recorder.start(250);
+        setIsListening(true);
+      })
+      .catch((err: Error) => {
+        console.error('[useSpeechRecognition] Mic access error:', err);
+        stopStream();
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          setError('Microphone permission denied. Please tap the lock icon in your browser address bar and allow microphone access.');
+        } else if (err.name === 'NotFoundError') {
+          setError('No microphone found. Please connect a microphone and try again.');
+        } else if (err.name === 'NotReadableError') {
+          setError('Microphone is in use by another app. Please close other apps and try again.');
+        } else {
+          setError('Could not access microphone. Please check your browser settings.');
+        }
+        setIsListening(false);
+      });
+  }, [isSupported, stopStream]);
 
   const stopListening = useCallback((): Promise<string> => {
     return new Promise((resolve) => {
       resolveRef.current = resolve;
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
       } else {
-        resolve(finalTranscriptRef.current.trim());
+        resolve('');
+        resolveRef.current = null;
       }
     });
   }, []);

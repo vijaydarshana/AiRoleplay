@@ -13,7 +13,11 @@ export default function TranscriptPanel({ transcript, interimText, isListening, 
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // Use setTimeout to ensure DOM has updated before scrolling (important on mobile)
+    const timer = setTimeout(() => {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 50);
+    return () => clearTimeout(timer);
   }, [transcript, interimText]);
 
   const formatTime = (ts: number) => {
@@ -42,8 +46,7 @@ export default function TranscriptPanel({ transcript, interimText, isListening, 
           <div
             className={`
               flex-shrink-0 w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-xs font-bold shadow-sm
-              ${turn.speaker === 'ai' ?'bg-gradient-to-br from-indigo-500 to-violet-600 text-white' :'bg-gradient-to-br from-emerald-500 to-teal-600 text-white'
-              }
+              ${turn.speaker === 'ai' ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white' : 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white'}
             `}
           >
             {turn.speaker === 'ai' ? customerName.charAt(0) : 'ME'}
@@ -77,8 +80,17 @@ export default function TranscriptPanel({ transcript, interimText, isListening, 
             ME
           </div>
           <div className="max-w-[85%] sm:max-w-[75%] items-end flex flex-col gap-1">
-            <span className="text-xs font-semibold text-emerald-400">You (typing...)</span>
-            <div className="px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-2xl rounded-tr-sm text-sm leading-relaxed bg-indigo-600/30 text-white/60 border border-indigo-500/30 italic">
+            <span className="text-xs font-semibold text-emerald-400">Recording...</span>
+            <div className="px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-2xl rounded-tr-sm text-sm leading-relaxed bg-emerald-900/20 text-emerald-300/80 border border-emerald-500/30 italic flex items-center gap-2">
+              <span className="flex gap-1">
+                {[0, 1, 2].map((i) => (
+                  <span
+                    key={`rec-dot-${i}`}
+                    className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce"
+                    style={{ animationDelay: `${i * 0.15}s` }}
+                  />
+                ))}
+              </span>
               {interimText}
             </div>
           </div>

@@ -18,8 +18,91 @@ import ProtocolChecklist from './ProtocolChecklist';
 import SessionHeader from './SessionHeader';
 import AIStatusBadge from './AIStatusBadge';
 import EndSessionModal from './EndSessionModal';
+import ElevenLabsSetupModal from '@/components/ui/ElevenLabsSetupModal';
 import { ClipboardList, X } from 'lucide-react';
 
+/** Unlock AudioContext on mobile — must be called from a user gesture */
+async function unlockAudioContext(): Promise<void> {
+  try {
+    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+    if (ctx.state === 'suspended') {
+      await ctx.resume();
+    }
+    // Play a silent buffer to fully unlock on iOS
+    const buffer = ctx.createBuffer(1, 1, 22050);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    source.start(0);
+    await ctx.close();
+  } catch {
+    // Non-fatal — audio may still work
+  }
+}
+
+/** Play audio blob with mobile-safe fallback */
+async function playAudioBlob(
+  blob: Blob,
+  audioRef: React.MutableRefObject<HTMLAudioElement | null>,
+  fallback: () => Promise<void>
+): Promise<void> {
+  const url = URL.createObjectURL(blob);
+
+  if (audioRef.current) {
+    audioRef.current.pause();
+    try { URL.revokeObjectURL(audioRef.current.src); } catch { /* ignore */ }
+  }
+
+  const audio = new Audio();
+  audio.preload = 'auto';
+  audio.setAttribute('playsinline', 'true');
+  audio.setAttribute('webkit-playsinline', 'true');
+  // Set src after attributes for iOS compatibility
+  audio.src = url;
+  audioRef.current = audio;
+
+  return new Promise<void>((resolve) => {
+    audio.onended = () => {
+      try { URL.revokeObjectURL(url); } catch { /* ignore */ }
+      resolve();
+    };
+    audio.onerror = () => {
+      try { URL.revokeObjectURL(url); } catch { /* ignore */ }
+      fallback().then(resolve).catch(resolve);
+    };
+
+    const playPromise = audio.play();
+    if (playPromise !== undefined) {
+      playPromise.catch(async () => {
+        // Autoplay blocked — try unlocking AudioContext then retry once
+        try {
+          await unlockAudioContext();
+          // Create a fresh URL from the same blob for the retry
+          const retryUrl = URL.createObjectURL(blob);
+          const retryAudio = new Audio();
+          retryAudio.setAttribute('playsinline', 'true');
+          retryAudio.setAttribute('webkit-playsinline', 'true');
+          retryAudio.src = retryUrl;
+          audioRef.current = retryAudio;
+          retryAudio.onended = () => {
+            try { URL.revokeObjectURL(retryUrl); } catch { /* ignore */ }
+            resolve();
+          };
+          retryAudio.onerror = () => {
+            try { URL.revokeObjectURL(retryUrl); } catch { /* ignore */ }
+            fallback().then(resolve).catch(resolve);
+          };
+          await retryAudio.play();
+        } catch {
+          try { URL.revokeObjectURL(url); } catch { /* ignore */ }
+          fallback().then(resolve).catch(resolve);
+        }
+      });
+    }
+  });
+}
 
 export default function RoleplayScreenClient() {
   const router = useRouter();
@@ -33,9 +116,12 @@ export default function RoleplayScreenClient() {
   const [showProtocol, setShowProtocol] = useState(false);
   const [lastAiText, setLastAiText] = useState<string | null>(null);
   const [isReplaying, setIsReplaying] = useState(false);
-  const [selectedVoice, setSelectedVoice] = useState<TTSVoice>('nova');
+  const [selectedVoice, setSelectedVoice] = useState<TTSVoice>('bella');
+  const [fatalError, setFatalError] = useState<string | null>(null);
+  const [showSetupModal, setShowSetupModal] = useState(false);
+  const [pendingTTSText, setPendingTTSText] = useState<string | null>(null);
   const replayAudioRef = useRef<HTMLAudioElement | null>(null);
-  const selectedVoiceRef = useRef<TTSVoice>('nova');
+  const selectedVoiceRef = useRef<TTSVoice>('bella');
 
   const timer = useTimer();
   const speech = useSpeechRecognition();
@@ -59,12 +145,15 @@ export default function RoleplayScreenClient() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scenario]);
 
-  // Update interim text while recording
+  // Update interim text while recording - Whisper returns text only after stop,
+  // so show a "Recording..." indicator while isListening is true
   useEffect(() => {
     if (speech.isListening) {
-      setInterimText(speech.transcript);
+      setInterimText('🎙 Recording...');
+    } else {
+      setInterimText('');
     }
-  }, [speech.transcript, speech.isListening]);
+  }, [speech.isListening]);
 
   const checkProtocol = useCallback((text: string) => {
     const lower = text.toLowerCase();
@@ -100,43 +189,33 @@ export default function RoleplayScreenClient() {
         setLastAiText(text);
         setAiStatus('speaking');
 
-        // Use selected voice for AI speech via TTS API
         try {
           const blob = await fetchTTSAudio({ text, voice: selectedVoiceRef.current });
-          const url = URL.createObjectURL(blob);
-
-          if (replayAudioRef.current) {
-            replayAudioRef.current.pause();
-            URL.revokeObjectURL(replayAudioRef.current.src);
+          await playAudioBlob(blob, replayAudioRef, () => synth.speak(text));
+        } catch (ttsErr) {
+          const err = ttsErr as Error & { needsSetup?: boolean };
+          if (err.needsSetup) {
+            // Show setup modal instead of fatal error
+            setPendingTTSText(text);
+            setShowSetupModal(true);
+            // Fall back to browser synthesis while user sets up
+            try { await synth.speak(text); } catch { /* silent */ }
+          } else {
+            console.warn('[RoleplayScreen] TTS failed, falling back to browser synthesis:', ttsErr);
+            try { await synth.speak(text); } catch { /* silent */ }
           }
-
-          const audio = new Audio(url);
-          replayAudioRef.current = audio;
-
-          await new Promise<void>((resolve) => {
-            audio.onended = () => {
-              URL.revokeObjectURL(url);
-              resolve();
-            };
-            audio.onerror = () => {
-              URL.revokeObjectURL(url);
-              synth.speak(text).then(resolve).catch(resolve);
-            };
-            audio.play().catch(() => {
-              URL.revokeObjectURL(url);
-              synth.speak(text).then(resolve).catch(resolve);
-            });
-          });
-        } catch {
-          // Fallback to browser speech synthesis
-          await synth.speak(text);
         }
 
         setAiStatus('idle');
       } catch (err) {
         console.error('AI turn error:', err);
         setAiStatus('error');
-        toast.error('AI response failed. Check your API key in .env.local and try again.');
+        const message = err instanceof Error ? err.message : 'AI response failed. Please try again.';
+        toast.error(message, { duration: 5000 });
+        // Only set fatal error for auth/config issues
+        if (message.includes('API key') || message.includes('not configured')) {
+          setFatalError(message);
+        }
       } finally {
         isProcessingRef.current = false;
       }
@@ -149,36 +228,16 @@ export default function RoleplayScreenClient() {
     setIsReplaying(true);
     setAiStatus('speaking');
 
-    const voiceToUse = selectedVoiceRef.current;
-
     try {
-      const blob = await fetchTTSAudio({ text: lastAiText, voice: voiceToUse });
-      const url = URL.createObjectURL(blob);
-
-      if (replayAudioRef.current) {
-        replayAudioRef.current.pause();
-        URL.revokeObjectURL(replayAudioRef.current.src);
-      }
-
-      const audio = new Audio(url);
-      replayAudioRef.current = audio;
-
-      await new Promise<void>((resolve) => {
-        audio.onended = () => resolve();
-        audio.onerror = () => {
-          synth.speak(lastAiText!).then(resolve);
-        };
-        audio.play().catch(() => {
-          synth.speak(lastAiText!).then(resolve);
-        });
-      });
-
-      URL.revokeObjectURL(url);
+      const blob = await fetchTTSAudio({ text: lastAiText, voice: selectedVoiceRef.current });
+      await playAudioBlob(blob, replayAudioRef, () => synth.speak(lastAiText!));
     } catch (err) {
-      console.error('Replay error:', err);
-      try {
-        await synth.speak(lastAiText);
-      } catch {
+      const ttsErr = err as Error & { needsSetup?: boolean };
+      if (ttsErr.needsSetup) {
+        setPendingTTSText(lastAiText);
+        setShowSetupModal(true);
+      }
+      try { await synth.speak(lastAiText); } catch {
         toast.error('Replay failed. Please try again.');
       }
     } finally {
@@ -187,9 +246,11 @@ export default function RoleplayScreenClient() {
     }
   }, [lastAiText, isReplaying, aiStatus, synth]);
 
-  const handleStartRecording = useCallback(() => {
+  const handleStartRecording = useCallback(async () => {
     if (aiStatus !== 'idle' || speech.isListening) return;
     synth.stop();
+    // Unlock AudioContext on first user gesture (required on iOS)
+    await unlockAudioContext();
     speech.startListening();
     setAiStatus('listening');
   }, [aiStatus, speech, synth]);
@@ -267,12 +328,51 @@ export default function RoleplayScreenClient() {
     isProcessingRef.current = false;
   }, [synth]);
 
+  const handleSetupSaved = useCallback(() => {
+    // Retry TTS with the newly saved key
+    if (pendingTTSText) {
+      const textToPlay = pendingTTSText;
+      setPendingTTSText(null);
+      fetchTTSAudio({ text: textToPlay, voice: selectedVoiceRef.current })
+        .then((blob) => playAudioBlob(blob, replayAudioRef, () => synth.speak(textToPlay)))
+        .catch(() => { /* silent — already played via browser synth */ });
+    }
+  }, [pendingTTSText, synth]);
+
   if (!scenario) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center">
           <div className="w-10 h-10 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
           <p className="text-sm text-slate-500">Loading scenario...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (fatalError) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+        <div className="bg-slate-800 border border-red-500/30 rounded-2xl p-6 sm:p-8 max-w-md w-full text-center shadow-xl">
+          <div className="w-12 h-12 bg-red-500/10 border border-red-500/30 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <span className="text-xl">⚠️</span>
+          </div>
+          <h2 className="text-lg font-bold text-white mb-2">Configuration Error</h2>
+          <p className="text-sm text-red-400 mb-6 leading-relaxed">{fatalError}</p>
+          <div className="flex gap-3">
+            <button
+              onClick={() => router.push('/home-screen')}
+              className="flex-1 py-2.5 rounded-xl border border-slate-600 text-slate-300 hover:bg-slate-700 text-sm font-semibold transition-colors"
+            >
+              Go Home
+            </button>
+            <button
+              onClick={() => { setFatalError(null); setAiStatus('idle'); triggerAITurn(transcript); }}
+              className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-sm font-bold transition-all"
+            >
+              Retry
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -375,6 +475,12 @@ export default function RoleplayScreenClient() {
           onCancel={() => setShowEndModal(false)}
         />
       )}
+
+      <ElevenLabsSetupModal
+        isOpen={showSetupModal}
+        onClose={() => setShowSetupModal(false)}
+        onSaved={handleSetupSaved}
+      />
     </div>
   );
 }

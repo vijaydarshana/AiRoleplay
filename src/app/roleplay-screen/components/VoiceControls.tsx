@@ -4,12 +4,12 @@ import type { TTSVoice } from '@/frontend/services/tts.service';
 import { Mic, AlertCircle, PhoneOff, RotateCcw } from 'lucide-react';
 
 const TTS_VOICES: { id: TTSVoice; label: string; description: string }[] = [
-  { id: 'nova',    label: 'Nova',    description: 'Warm & friendly' },
-  { id: 'shimmer', label: 'Shimmer', description: 'Soft & clear' },
-  { id: 'fable',   label: 'Fable',   description: 'Expressive' },
-  { id: 'echo',    label: 'Echo',    description: 'Crisp & neutral' },
-  { id: 'alloy',   label: 'Alloy',   description: 'Balanced' },
-  { id: 'onyx',    label: 'Onyx',    description: 'Deep & rich' },
+  { id: 'rachel', label: 'Rachel', description: 'Calm & professional' },
+  { id: 'adam',   label: 'Adam',   description: 'Deep & authoritative' },
+  { id: 'bella',  label: 'Bella',  description: 'Warm & friendly' },
+  { id: 'elli',   label: 'Elli',   description: 'Young & energetic' },
+  { id: 'josh',   label: 'Josh',   description: 'Conversational' },
+  { id: 'sam',    label: 'Sam',    description: 'Neutral & clear' },
 ];
 
 export type { TTSVoice };
@@ -54,7 +54,7 @@ export default function VoiceControls({
         <div className="mb-3 sm:mb-4 flex items-start gap-2.5 bg-red-950/50 border border-red-700/40 rounded-xl px-3 sm:px-4 py-2.5 sm:py-3">
           <AlertCircle size={15} className="text-red-400 flex-shrink-0 mt-0.5" />
           <p className="text-xs text-red-300">
-            Speech recognition requires Chrome. Please open this page in Chrome on desktop or mobile.
+            Microphone access is not supported in this browser. Please use a modern browser (Chrome, Firefox, Safari, or Edge).
           </p>
         </div>
       )}

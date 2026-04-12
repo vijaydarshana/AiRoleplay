@@ -18,16 +18,31 @@ export interface EvaluationResponse {
 }
 
 export async function evaluateSession(request: EvaluationRequest): Promise<EvaluationResponse> {
-  const res = await fetch('/api/evaluate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(request),
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error(err.error ?? 'Evaluation API error');
+  let res: Response;
+  try {
+    res = await fetch('/api/evaluate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+  } catch {
+    throw new Error('Network error: Could not reach the evaluation service. Please check your internet connection.');
   }
 
-  return res.json() as Promise<EvaluationResponse>;
+  if (!res.ok) {
+    let errMessage = 'Evaluation API error';
+    try {
+      const err = await res.json() as { error?: string };
+      errMessage = err.error ?? errMessage;
+    } catch {
+      // ignore JSON parse failure
+    }
+    throw new Error(errMessage);
+  }
+
+  try {
+    return await res.json() as EvaluationResponse;
+  } catch {
+    throw new Error('Received an invalid response from the evaluation API.');
+  }
 }

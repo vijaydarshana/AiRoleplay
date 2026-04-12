@@ -16,16 +16,31 @@ export interface ChatResponse {
 }
 
 export async function sendChatMessage(request: ChatRequest): Promise<ChatResponse> {
-  const res = await fetch('/api/chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(request),
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error(err.error ?? 'Chat API error');
+  let res: Response;
+  try {
+    res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+  } catch (networkErr) {
+    throw new Error('Network error: Could not reach the server. Please check your internet connection.');
   }
 
-  return res.json() as Promise<ChatResponse>;
+  if (!res.ok) {
+    let errMessage = 'Chat API error';
+    try {
+      const err = await res.json() as { error?: string };
+      errMessage = err.error ?? errMessage;
+    } catch {
+      // ignore JSON parse failure
+    }
+    throw new Error(errMessage);
+  }
+
+  try {
+    return await res.json() as ChatResponse;
+  } catch {
+    throw new Error('Received an invalid response from the chat API.');
+  }
 }
