@@ -26,7 +26,7 @@ export default function TranscriptPanel({ transcript, interimText, isListening, 
   };
 
   return (
-    <div className="h-full overflow-y-auto custom-scroll px-3 sm:px-5 lg:px-6 py-4 sm:py-5 space-y-4 sm:space-y-5">
+    <div className="h-full min-h-0 overflow-y-auto custom-scroll px-3 sm:px-5 lg:px-6 py-4 sm:py-6 space-y-5 sm:space-y-6">
       {transcript.length === 0 && (
         <div className="flex flex-col items-center justify-center h-40 text-center">
           <div className="w-14 h-14 bg-gradient-to-br from-slate-800 to-slate-700 border border-slate-700 rounded-2xl flex items-center justify-center mb-3 shadow-inner">
@@ -40,12 +40,12 @@ export default function TranscriptPanel({ transcript, interimText, isListening, 
       {transcript.map((turn) => (
         <div
           key={turn.id}
-          className={`transcript-message flex gap-2.5 sm:gap-3 ${turn.speaker === 'candidate' ? 'flex-row-reverse' : 'flex-row'}`}
+          className={`transcript-message flex gap-3 sm:gap-4 ${turn.speaker === 'candidate' ? 'flex-row-reverse' : 'flex-row'}`}
         >
           {/* Avatar */}
           <div
             className={`
-              flex-shrink-0 w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-xs font-bold shadow-sm
+              flex-shrink-0 w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center text-xs font-bold shadow-sm
               ${turn.speaker === 'ai' ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white' : 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white'}
             `}
           >
@@ -53,7 +53,7 @@ export default function TranscriptPanel({ transcript, interimText, isListening, 
           </div>
 
           {/* Bubble */}
-          <div className={`max-w-[85%] sm:max-w-[75%] ${turn.speaker === 'candidate' ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
+          <div className={`max-w-[85%] sm:max-w-[75%] ${turn.speaker === 'candidate' ? 'items-end' : 'items-start'} flex flex-col gap-1.5`}>
             <div className="flex items-center gap-2 flex-wrap">
               <span className={`text-xs font-semibold ${turn.speaker === 'ai' ? 'text-indigo-400' : 'text-emerald-400'}`}>
                 {turn.speaker === 'ai' ? customerName : 'You (Executive)'}
@@ -62,7 +62,7 @@ export default function TranscriptPanel({ transcript, interimText, isListening, 
             </div>
             <div
               className={`
-                px-3.5 sm:px-4 py-2.5 sm:py-3 text-sm leading-relaxed shadow-sm
+                px-4 sm:px-4 py-3 sm:py-3.5 text-sm leading-relaxed shadow-sm
                 ${turn.speaker === 'ai' ?'bg-slate-800/90 border border-slate-700/60 text-slate-100 rounded-2xl rounded-tl-sm' :'bg-gradient-to-br from-indigo-600 to-indigo-700 text-white rounded-2xl rounded-tr-sm shadow-indigo-900/30'
                 }
               `}
@@ -74,15 +74,15 @@ export default function TranscriptPanel({ transcript, interimText, isListening, 
       ))}
 
       {/* Interim text while recording */}
-      {isListening && interimText && (
-        <div className="flex gap-2.5 sm:gap-3 flex-row-reverse">
-          <div className="flex-shrink-0 w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-xs font-bold bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-sm">
+      {isListening && (
+        <div className="flex gap-3 sm:gap-4 flex-row-reverse">
+          <div className="flex-shrink-0 w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center text-xs font-bold bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-sm">
             ME
           </div>
-          <div className="max-w-[85%] sm:max-w-[75%] items-end flex flex-col gap-1">
+          <div className="max-w-[85%] sm:max-w-[75%] items-end flex flex-col gap-1.5">
             <span className="text-xs font-semibold text-emerald-400">Recording...</span>
-            <div className="px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-2xl rounded-tr-sm text-sm leading-relaxed bg-emerald-900/20 text-emerald-300/80 border border-emerald-500/30 italic flex items-center gap-2">
-              <span className="flex gap-1">
+            <div className="px-4 py-3 rounded-2xl rounded-tr-sm text-sm leading-relaxed bg-emerald-900/20 text-emerald-300/80 border border-emerald-500/30 italic flex items-center gap-2 flex-wrap">
+              <span className="flex gap-1 flex-shrink-0">
                 {[0, 1, 2].map((i) => (
                   <span
                     key={`rec-dot-${i}`}
@@ -91,7 +91,7 @@ export default function TranscriptPanel({ transcript, interimText, isListening, 
                   />
                 ))}
               </span>
-              {interimText}
+              <span className="break-words min-w-0">{interimText || 'Listening… speak now'}</span>
             </div>
           </div>
         </div>
