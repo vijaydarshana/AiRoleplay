@@ -2,7 +2,7 @@
 
 A voice-powered roleplay assessment tool for telecom store executives. Practice real customer scenarios with an AI customer (powered by Claude), get scored instantly across 5 performance criteria, and improve your customer service skills.
 
-🌐 **Live Demo**: [https://roleplayas9191.builtwithrocket.new](https://roleplayas9191.builtwithrocket.new)
+🌐 **Live Demo**: https://ai-roleplay-42kd.vercel.app/home-screen
 
 ---
 
