@@ -392,6 +392,40 @@ export default function RoleplayScreenClient() {
     isProcessingRef.current = false;
   }, [synth]);
 
+  /** Send the pending (mobile auto-ended) transcript manually */
+  const handleSendPending = useCallback(() => {
+    speech.sendPending((spokenText: string) => {
+      if (!spokenText.trim()) {
+        setAiStatus('idle');
+        return;
+      }
+      setInterimText('');
+      setAiStatus('processing');
+
+      const candidateTurn: TranscriptTurn = {
+        id: `turn-candidate-${Date.now()}`,
+        speaker: 'candidate',
+        text: spokenText.trim(),
+        timestamp: Date.now(),
+      };
+
+      checkProtocol(spokenText);
+
+      setTranscript((prev) => {
+        const updated = [...prev, candidateTurn];
+        pendingAITurnRef.current = updated;
+        return updated;
+      });
+    });
+  }, [speech, checkProtocol]);
+
+  /** Discard the pending transcript and reset to idle */
+  const handleClearPending = useCallback(() => {
+    speech.clearPending();
+    setAiStatus('idle');
+    setInterimText('');
+  }, [speech]);
+
   if (!scenario) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -501,6 +535,10 @@ export default function RoleplayScreenClient() {
             pitch={voicePitch}
             onSpeedChange={handleSpeedChange}
             onPitchChange={handlePitchChange}
+            pendingTranscript={speech.pendingTranscript}
+            onSendPending={handleSendPending}
+            onClearPending={handleClearPending}
+            liveTranscript={speech.transcript}
           />
         </div>
 

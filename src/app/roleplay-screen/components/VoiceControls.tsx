@@ -1,7 +1,7 @@
 'use client';
 import type { AIStatus } from '@/types';
 import type { TTSVoice } from '@/frontend/services/tts.service';
-import { Mic, AlertCircle, PhoneOff, RotateCcw, StopCircle } from 'lucide-react';
+import { Mic, AlertCircle, PhoneOff, RotateCcw, StopCircle, Send, X } from 'lucide-react';
 
 const TTS_VOICES: { id: TTSVoice; label: string; description: string }[] = [
   { id: 'sarah',     label: 'Sarah ♀',        description: 'Warm & conversational' },
@@ -35,6 +35,11 @@ interface Props {
   pitch: number;
   onSpeedChange: (value: number) => void;
   onPitchChange: (value: number) => void;
+  pendingTranscript?: string;
+  onSendPending?: () => void;
+  onClearPending?: () => void;
+  liveTranscript?: string;
+  isMobile?: boolean;
 }
 
 export default function VoiceControls({
@@ -55,8 +60,13 @@ export default function VoiceControls({
   pitch,
   onSpeedChange,
   onPitchChange,
+  pendingTranscript = '',
+  onSendPending,
+  onClearPending,
+  liveTranscript = '',
+  isMobile = false,
 }: Props) {
-  const canStart = isSupported && (aiStatus === 'idle' || aiStatus === 'speaking') && !isListening;
+  const canStart = isSupported && (aiStatus === 'idle' || aiStatus === 'speaking') && !isListening && !pendingTranscript;
 
   const handleMicClick = () => {
     if (aiStatus === 'speaking') {
@@ -80,6 +90,40 @@ export default function VoiceControls({
         <div className="mb-4 flex items-start gap-3 bg-red-950/50 border border-red-700/40 rounded-xl px-4 py-3">
           <AlertCircle size={16} className="text-red-400 flex-shrink-0 mt-0.5" />
           <p className="text-xs text-red-300 leading-relaxed">{error}</p>
+        </div>
+      )}
+
+      {/* Pending transcript review panel (mobile manual send) */}
+      {pendingTranscript && !isListening && (
+        <div className="mb-4 bg-slate-900/80 border border-emerald-700/40 rounded-xl px-4 py-3">
+          <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest mb-1.5">You said:</p>
+          <p className="text-sm text-slate-200 leading-relaxed break-words">{pendingTranscript}</p>
+          <div className="flex items-center gap-2 mt-3">
+            <button
+              onClick={onSendPending}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:scale-95 transition-all duration-150 touch-manipulation"
+            >
+              <Send size={14} className="text-white" />
+              <span className="text-xs font-semibold text-white">Send</span>
+            </button>
+            <button
+              onClick={onClearPending}
+              className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 transition-all duration-150 touch-manipulation border border-slate-700/60"
+            >
+              <X size={14} className="text-slate-400" />
+              <span className="text-xs font-medium text-slate-400">Discard</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Live transcript preview while listening */}
+      {isListening && (
+        <div className="mb-4 bg-slate-900/60 border border-slate-700/40 rounded-xl px-4 py-3">
+          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">Listening…</p>
+          <p className="text-sm text-slate-300 leading-relaxed break-words italic min-h-[20px]">
+            {liveTranscript || <span className="text-slate-600">Start speaking…</span>}
+          </p>
         </div>
       )}
 
@@ -182,7 +226,7 @@ export default function VoiceControls({
 
       <div className="flex items-center justify-center gap-8 sm:gap-10">
         {/* End Session button */}
-        {(aiStatus === 'idle' || isListening) && (
+        {(aiStatus === 'idle' || isListening) && !pendingTranscript && (
           <div className="flex flex-col items-center gap-2.5">
             <button
               onClick={onEnd}
@@ -196,7 +240,7 @@ export default function VoiceControls({
         )}
 
         {/* Stop AI button — shown while AI is speaking */}
-        {aiStatus === 'speaking' && !isListening && (
+        {aiStatus === 'speaking' && !isListening && !pendingTranscript && (
           <div className="flex flex-col items-center gap-2.5">
             <button
               onClick={onStopAudio}
@@ -210,7 +254,7 @@ export default function VoiceControls({
         )}
 
         {/* Start to Speak button */}
-        {!isListening && (
+        {!isListening && !pendingTranscript && (
           <div className="flex flex-col items-center gap-2.5">
             <div className="relative">
               <button
@@ -235,7 +279,7 @@ export default function VoiceControls({
           </div>
         )}
 
-        {/* End to Speak button */}
+        {/* Listening state — Stop button + Send button (mobile) */}
         {isListening && (
           <div className="flex flex-col items-center gap-2.5">
             <div className="relative">
@@ -257,13 +301,27 @@ export default function VoiceControls({
               </button>
             </div>
             <p className="text-[10px] text-emerald-400 font-semibold text-center max-w-[110px] leading-relaxed uppercase tracking-wider">
-              Tap to Send
+              Tap to Stop
             </p>
           </div>
         )}
 
+        {/* Send button — shown while listening on mobile so user can send without waiting for auto-end */}
+        {isListening && (
+          <div className="flex flex-col items-center gap-2.5">
+            <button
+              onClick={onStopRecording}
+              className="w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center bg-emerald-600/20 hover:bg-emerald-600/40 border border-emerald-600/50 hover:border-emerald-500/70 transition-all duration-150 active:scale-95 touch-manipulation"
+              title="Send message"
+            >
+              <Send size={22} className="text-emerald-400" />
+            </button>
+            <p className="text-[10px] text-emerald-400 font-medium text-center uppercase tracking-wider">Send</p>
+          </div>
+        )}
+
         {/* Replay button */}
-        {aiStatus === 'idle' && !isListening && canReplay && (
+        {aiStatus === 'idle' && !isListening && !pendingTranscript && canReplay && (
           <div className="flex flex-col items-center gap-2.5">
             <button
               onClick={onReplay}
@@ -288,7 +346,11 @@ export default function VoiceControls({
       {/* Hint */}
       <div className="mt-5 text-center">
         <p className="text-[10px] text-slate-700 font-medium">
-          Tap &quot;Tap to Speak&quot; to begin · Tap &quot;Tap to Send&quot; when done
+          {pendingTranscript
+            ? 'Review your message above · Tap Send or Discard'
+            : isListening
+            ? 'Speak now · Tap Send when done or Stop to cancel'
+            : 'Tap \u201cTap to Speak\u201d to begin · Tap \u201cSend\u201d when done'}
         </p>
       </div>
     </div>
