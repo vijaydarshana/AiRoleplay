@@ -18,7 +18,7 @@ import ProtocolChecklist from './ProtocolChecklist';
 import SessionHeader from './SessionHeader';
 import AIStatusBadge from './AIStatusBadge';
 import EndSessionModal from './EndSessionModal';
-import { ClipboardList, X } from 'lucide-react';
+import { ClipboardList, X, WifiOff } from 'lucide-react';
 
 /** Unlock AudioContext on mobile — must be called from a user gesture */
 async function unlockAudioContext(): Promise<void> {
@@ -115,12 +115,13 @@ export default function RoleplayScreenClient() {
   const [showProtocol, setShowProtocol] = useState(false);
   const [lastAiText, setLastAiText] = useState<string | null>(null);
   const [isReplaying, setIsReplaying] = useState(false);
-  const [selectedVoice, setSelectedVoice] = useState<TTSVoice>('riya');
+  const [selectedVoice, setSelectedVoice] = useState<TTSVoice>('sarah');
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [voiceSpeed, setVoiceSpeed] = useState<number>(1.0);
   const [voicePitch, setVoicePitch] = useState<number>(0);
+  const [isOffline, setIsOffline] = useState(false);
   const replayAudioRef = useRef<HTMLAudioElement | null>(null);
-  const selectedVoiceRef = useRef<TTSVoice>('riya');
+  const selectedVoiceRef = useRef<TTSVoice>('sarah');
   const voiceSpeedRef = useRef<number>(1.0);
   const voicePitchRef = useRef<number>(0);
   const pendingAITurnRef = useRef<TranscriptTurn[] | null>(null);
@@ -136,6 +137,36 @@ export default function RoleplayScreenClient() {
     const id = sessionStorage.getItem('selected_scenario') ?? 'sim-replacement';
     setScenario(findScenario(id));
   }, []);
+
+  // Track online/offline status
+  useEffect(() => {
+    const handleOffline = () => {
+      setIsOffline(true);
+      toast.error('You are offline. Please check your internet connection.', { id: 'offline-toast', duration: Infinity });
+    };
+    const handleOnline = () => {
+      setIsOffline(false);
+      toast.dismiss('offline-toast');
+      toast.success('Back online!', { duration: 3000 });
+    };
+    setIsOffline(!navigator.onLine);
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, []);
+
+  // Show toast when mic permission is denied
+  useEffect(() => {
+    if (speech.permissionDenied) {
+      toast.error('Microphone access denied. Please allow microphone access in your browser settings and refresh the page.', {
+        id: 'mic-permission-toast',
+        duration: 8000,
+      });
+    }
+  }, [speech.permissionDenied]);
 
   // Auto-start AI first turn once scenario is loaded
   useEffect(() => {
@@ -222,7 +253,14 @@ export default function RoleplayScreenClient() {
         console.error('AI turn error:', err);
         setAiStatus('error');
         const message = err instanceof Error ? err.message : 'AI response failed. Please try again.';
-        toast.error(message, { duration: 5000 });
+        const isNetworkError = message.toLowerCase().includes('network') || message.toLowerCase().includes('connection');
+        toast.error(message, {
+          duration: 6000,
+          action: isNetworkError ? {
+            label: 'Retry',
+            onClick: () => triggerAITurn(currentTranscript),
+          } : undefined,
+        });
         // Only set fatal error for auth/config issues
         if (message.includes('API key') || message.includes('not configured')) {
           setFatalError(message);
@@ -398,6 +436,13 @@ export default function RoleplayScreenClient() {
 
   return (
     <div className="min-h-screen bg-slate-900 flex flex-col">
+      {/* Offline banner */}
+      {isOffline && (
+        <div className="flex items-center justify-center gap-2 bg-amber-500/10 border-b border-amber-500/30 px-4 py-2 text-xs text-amber-300 font-medium">
+          <WifiOff size={13} className="flex-shrink-0" />
+          <span>No internet connection — AI responses and voice features require an active connection.</span>
+        </div>
+      )}
       {/* Header */}
       <SessionHeader
         scenario={scenario}
@@ -412,14 +457,14 @@ export default function RoleplayScreenClient() {
         {/* Transcript + Controls */}
         <div className="flex-1 flex flex-col min-h-0">
           {/* AI Status + Protocol Toggle (mobile) */}
-          <div className="px-3 sm:px-4 lg:px-6 py-2 sm:py-3 border-b border-slate-800 flex items-center justify-between gap-3">
+          <div className="px-3 sm:px-4 lg:px-6 py-3 sm:py-3.5 border-b border-slate-800 flex items-center justify-between gap-3">
             <AIStatusBadge status={aiStatus} customerName={scenario.customer.name} />
             {/* Mobile protocol toggle */}
             <button
               onClick={() => setShowProtocol(!showProtocol)}
-              className="lg:hidden flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 transition-colors flex-shrink-0"
+              className="lg:hidden flex items-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-300 transition-colors flex-shrink-0 touch-manipulation min-h-[40px]"
             >
-              <ClipboardList size={13} className="text-violet-400" />
+              <ClipboardList size={14} className="text-violet-400" />
               <span>Protocol</span>
               <span className={`text-xs font-bold font-mono-data ${protocolCompletion === 100 ? 'text-emerald-400' : 'text-slate-400'}`}>
                 {protocolCompletion}%
@@ -428,7 +473,7 @@ export default function RoleplayScreenClient() {
           </div>
 
           {/* Transcript */}
-          <div className="flex-1 overflow-hidden">
+          <div className="flex-1 overflow-hidden min-h-0">
             <TranscriptPanel
               transcript={transcript}
               interimText={interimText}
@@ -469,11 +514,11 @@ export default function RoleplayScreenClient() {
           overflow-y-auto
         `}>
           {/* Mobile close button */}
-          <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-slate-950">
+          <div className="lg:hidden flex items-center justify-between px-4 py-3.5 border-b border-slate-800 bg-slate-950">
             <span className="text-sm font-semibold text-slate-200">Protocol Checklist</span>
             <button
               onClick={() => setShowProtocol(false)}
-              className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400"
+              className="w-10 h-10 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 touch-manipulation"
             >
               <X size={16} />
             </button>

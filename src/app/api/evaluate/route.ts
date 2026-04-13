@@ -1,4 +1,8 @@
-
+/**
+ * CONTROLLER: Evaluate
+ * Handles POST /api/evaluate
+ * Receives session data, delegates to prompt service and Anthropic SDK.
+ */
 
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
@@ -77,7 +81,17 @@ export async function POST(req: NextRequest) {
       if (error.status === 429) {
         return NextResponse.json({ error: 'Anthropic rate limit reached. Please wait a moment and try again.' }, { status: 429 });
       }
+      if (error.status === 529) {
+        return NextResponse.json({ error: 'Anthropic API is overloaded. Please try again shortly.' }, { status: 503 });
+      }
       return NextResponse.json({ error: `Anthropic API error: ${error.message}` }, { status: error.status ?? 500 });
+    }
+
+    if (
+      error instanceof TypeError ||
+      (error instanceof Error && (error.message.includes('fetch') || error.message.includes('network') || error.message.includes('ECONNREFUSED') || error.message.includes('ETIMEDOUT')))
+    ) {
+      return NextResponse.json({ error: 'Network error reaching Anthropic. Please check your connection and try again.' }, { status: 503 });
     }
 
     return NextResponse.json(

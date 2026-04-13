@@ -4,7 +4,7 @@
  * Used by view components — never calls ElevenLabs directly.
  */
 
-export type TTSVoice = 'riya' | 'raju' | 'ruhaan' | 'aria' | 'rachel' | 'sarah' | 'charlotte' | 'alice' | 'bill' | 'george' | 'jessica';
+export type TTSVoice = 'drew' | 'dave' | 'aria' | 'rachel' | 'sarah' | 'charlotte' | 'alice' | 'bill' | 'george' | 'jessica';
 
 export interface TTSRequest {
   text: string;

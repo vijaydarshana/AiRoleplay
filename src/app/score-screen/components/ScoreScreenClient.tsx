@@ -24,6 +24,7 @@ export default function ScoreScreenClient() {
   const [history, setHistory] = useState<SessionRecord[]>([]);
   const [viewingHistoryId, setViewingHistoryId] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     const initScore = async () => {
@@ -86,13 +87,14 @@ export default function ScoreScreenClient() {
         getSessionsWithCloud().then(setHistory).catch(() => {});
       } catch (err) {
         console.error('Evaluation error:', err);
-        setError(err instanceof Error ? err.message : 'Evaluation failed. Please check your API key.');
+        const errMsg = err instanceof Error ? err.message : 'Evaluation failed. Please check your API key.';
+        setError(errMsg);
         setLoading(false);
       }
     };
 
     initScore();
-  }, []);
+  }, [retryCount]);
 
   const handleViewHistory = async (id: string) => {
     const hist = await getSessionWithCloud(id);
@@ -132,13 +134,17 @@ export default function ScoreScreenClient() {
   }
 
   if (error) {
+    const isNetworkError = error.toLowerCase().includes('network') || error.toLowerCase().includes('connection');
+    const canRetry = !!getPendingSession();
     return (
       <div className="min-h-screen bg-[#f6f7fb] flex items-center justify-center p-4">
         <div className="bg-white border border-red-200 rounded-2xl p-6 sm:p-8 max-w-md w-full text-center shadow-sm">
           <div className="w-12 h-12 bg-red-50 border border-red-200 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <span className="text-xl">⚠️</span>
+            <span className="text-xl">{isNetworkError ? '📡' : '⚠️'}</span>
           </div>
-          <h2 className="text-lg font-bold text-slate-800 mb-2">Evaluation Failed</h2>
+          <h2 className="text-lg font-bold text-slate-800 mb-2">
+            {isNetworkError ? 'Connection Error' : 'Evaluation Failed'}
+          </h2>
           <p className="text-sm text-red-600 mb-6 leading-relaxed">{error}</p>
           <div className="flex gap-3">
             <button
@@ -147,12 +153,21 @@ export default function ScoreScreenClient() {
             >
               Go Home
             </button>
-            <button
-              onClick={() => router.push('/roleplay-screen')}
-              className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-sm font-bold transition-all shadow-sm shadow-indigo-200"
-            >
-              Try Again
-            </button>
+            {canRetry ? (
+              <button
+                onClick={() => { setError(null); setLoading(true); setRetryCount((c) => c + 1); }}
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-sm font-bold transition-all shadow-sm shadow-indigo-200"
+              >
+                Retry
+              </button>
+            ) : (
+              <button
+                onClick={() => router.push('/roleplay-screen')}
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-sm font-bold transition-all shadow-sm shadow-indigo-200"
+              >
+                New Session
+              </button>
+            )}
           </div>
         </div>
       </div>

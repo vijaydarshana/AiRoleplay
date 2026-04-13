@@ -8,6 +8,7 @@ export interface SpeechRecognitionHook {
   stopListening: (onResult?: (text: string) => void) => void;
   isSupported: boolean;
   error: string | null;
+  permissionDenied: boolean;
 }
 
 // ─── Web Speech API types ─────────────────────────────────────────────────────
@@ -87,10 +88,12 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [permissionDenied, setPermissionDenied] = useState(false);
 
   // Web Speech API refs
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const finalTranscriptRef = useRef<string>('');
+  const interimTranscriptRef = useRef<string>(''); // track interim for mobile fallback
   const onResultCallbackRef = useRef<((text: string) => void) | null>(null);
   const isStoppingRef = useRef(false);
   const recognitionEndedRef = useRef(false);
@@ -125,6 +128,7 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
     if (!WebSpeechAPI) return;
 
     finalTranscriptRef.current = '';
+    interimTranscriptRef.current = '';
     isStoppingRef.current = false;
     recognitionEndedRef.current = false;
 
@@ -154,6 +158,7 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
         }
       }
       finalTranscriptRef.current = final;
+      interimTranscriptRef.current = interim;
       // Show live interim text in the UI via transcript state
       setTranscript((final + interim).trim());
     };
@@ -161,6 +166,7 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
     recognition.onerror = (e: SpeechRecognitionErrorEvent) => {
       console.warn('[useSpeechRecognition] Web Speech error:', e.error);
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        setPermissionDenied(true);
         setError('Microphone permission denied. Please allow microphone access in your browser settings.');
       } else if (e.error === 'no-speech') {
         // Not a fatal error — just no speech detected yet
@@ -177,15 +183,23 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
       recognitionEndedRef.current = true;
       setIsListening(false);
 
-      // Fire callback with accumulated transcript (whether intentional or unexpected end)
-      const result = finalTranscriptRef.current.trim();
-      console.log('[useSpeechRecognition] Web Speech result:', result);
+      // On mobile (iOS Safari), isFinal results are often not fired before onend.
+      // Use interim transcript as fallback when final is empty.
+      const finalText = finalTranscriptRef.current.trim();
+      const interimText = interimTranscriptRef.current.trim();
+      const result = finalText || interimText;
+
+      console.log('[useSpeechRecognition] Web Speech result (final:', finalText, ', interim fallback:', interimText, ')');
       setTranscript(result);
       const cb = onResultCallbackRef.current;
       onResultCallbackRef.current = null;
-      if (isStoppingRef.current || result) {
+
+      if (isStoppingRef.current) {
+        // User intentionally stopped — always fire callback with whatever we have
         cb?.(result);
-      } else if (!isStoppingRef.current) {
+      } else if (result) {
+        cb?.(result);
+      } else {
         // Unexpected end with no result — restart silently
         try {
           recognition.start();
@@ -215,14 +229,18 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
       setIsListening(false);
       const cb = onResultCallbackRef.current;
       onResultCallbackRef.current = null;
-      cb?.(finalTranscriptRef.current.trim());
+      const finalText = finalTranscriptRef.current.trim();
+      const interimText = interimTranscriptRef.current.trim();
+      cb?.(finalText || interimText);
       return;
     }
 
     if (recognitionEndedRef.current) {
       // Already ended — fire callback immediately
       setIsListening(false);
-      const result = finalTranscriptRef.current.trim();
+      const finalText = finalTranscriptRef.current.trim();
+      const interimText = interimTranscriptRef.current.trim();
+      const result = finalText || interimText;
       setTranscript(result);
       const cb = onResultCallbackRef.current;
       onResultCallbackRef.current = null;
@@ -232,7 +250,9 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
         recognition.stop(); // triggers onend → fires callback
       } catch {
         setIsListening(false);
-        const result = finalTranscriptRef.current.trim();
+        const finalText = finalTranscriptRef.current.trim();
+        const interimText = interimTranscriptRef.current.trim();
+        const result = finalText || interimText;
         setTranscript(result);
         const cb = onResultCallbackRef.current;
         onResultCallbackRef.current = null;
@@ -344,10 +364,20 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
       })
       .catch((err: Error) => {
         setIsListening(false);
-        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        isStoppingRef.current = false;
+        if (
+          err.name === 'NotAllowedError' ||
+          err.name === 'PermissionDeniedError' ||
+          err.name === 'SecurityError'
+        ) {
+          setPermissionDenied(true);
           setError('Microphone permission denied. Please allow microphone access in your browser settings.');
         } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
           setError('No microphone found. Please connect a microphone and try again.');
+        } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+          setError('Microphone is in use by another application. Please close other apps and try again.');
+        } else if (err.name === 'OverconstrainedError') {
+          setError('Microphone does not meet the required audio constraints. Please try a different microphone.');
         } else {
           setError(`Could not access microphone: ${err.message}`);
         }
@@ -388,6 +418,7 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
     if (isListening) return;
 
     setError(null);
+    setPermissionDenied(false);
     setTranscript('');
 
     if (hasWebSpeech) {
@@ -405,5 +436,5 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
     }
   }, [hasWebSpeech, stopWebSpeech, stopMediaRecorder]);
 
-  return { isListening, transcript, startListening, stopListening, isSupported, error };
+  return { isListening, transcript, startListening, stopListening, isSupported, error, permissionDenied };
 }
