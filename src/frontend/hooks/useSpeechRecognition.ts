@@ -4,8 +4,11 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 export interface SpeechRecognitionHook {
   isListening: boolean;
   transcript: string;
+  pendingTranscript: string;
   startListening: () => void;
   stopListening: (onResult?: (text: string) => void) => void;
+  sendPending: (onResult: (text: string) => void) => void;
+  clearPending: () => void;
   isSupported: boolean;
   error: string | null;
   permissionDenied: boolean;
@@ -40,6 +43,13 @@ function getWebSpeechAPI(): (new () => SpeechRecognitionInstance) | null {
   return (w['SpeechRecognition'] as (new () => SpeechRecognitionInstance)) ||
     (w['webkitSpeechRecognition'] as (new () => SpeechRecognitionInstance)) ||
     null;
+}
+
+// Detect mobile browsers — on mobile, Web Speech API auto-ends after silence
+// and restarting causes the "speak again" prompt loop
+function isMobileBrowser(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /Android|iPhone|iPad|iPod|Mobile|webOS/i.test(navigator.userAgent);
 }
 
 // ─── MIME type selection ──────────────────────────────────────────────────────
@@ -87,6 +97,7 @@ async function transcribeViaWhisper(audioBlob: Blob, mimeType: string): Promise<
 export function useSpeechRecognition(): SpeechRecognitionHook {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
+  const [pendingTranscript, setPendingTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
 
@@ -131,12 +142,14 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
     interimTranscriptRef.current = '';
     isStoppingRef.current = false;
     recognitionEndedRef.current = false;
+    // Clear any previous pending transcript when starting fresh
+    setPendingTranscript('');
 
     const recognition = new WebSpeechAPI();
-    recognition.lang = 'en-US'; // en-US is faster and more responsive than en-IN
-    recognition.continuous = true;
+    recognition.lang = 'en-US';
+    recognition.continuous = !isMobileBrowser(); // mobile: false prevents "speak again" loop
     recognition.interimResults = true;
-    recognition.maxAlternatives = 1; // fewer alternatives = faster processing
+    recognition.maxAlternatives = 1;
     recognitionRef.current = recognition;
 
     recognition.onstart = () => {
@@ -192,19 +205,33 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
       console.log('[useSpeechRecognition] Web Speech result (final:', finalText, ', interim fallback:', interimText, ')');
       setTranscript(result);
       const cb = onResultCallbackRef.current;
-      onResultCallbackRef.current = null;
 
       if (isStoppingRef.current) {
-        // User intentionally stopped — always fire callback with whatever we have
+        // User intentionally stopped via stopListening — fire callback immediately
+        onResultCallbackRef.current = null;
         cb?.(result);
+      } else if (isMobileBrowser()) {
+        // Mobile auto-end: store as pending so user can review and manually send
+        // Do NOT fire the callback yet — wait for sendPending()
+        if (result) {
+          setPendingTranscript(result);
+          console.log('[useSpeechRecognition] Mobile auto-end — stored as pending:', result);
+        } else {
+          // No speech captured — fire empty callback to reset state
+          onResultCallbackRef.current = null;
+          cb?.(result);
+        }
       } else if (result) {
+        // Desktop: unexpected end with result — fire callback
+        onResultCallbackRef.current = null;
         cb?.(result);
       } else {
-        // Unexpected end with no result — restart silently
+        // Desktop only: Unexpected end with no result — restart silently
         try {
           recognition.start();
           recognitionEndedRef.current = false;
         } catch {
+          onResultCallbackRef.current = null;
           cb?.(result);
         }
       }
@@ -265,6 +292,7 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
   const startMediaRecorder = useCallback(() => {
     setError(null);
     setTranscript('');
+    setPendingTranscript('');
     isStoppingRef.current = false;
     onResultCallbackRef.current = null;
     chunksRef.current = [];
@@ -273,10 +301,9 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
     const audioConstraints: MediaTrackConstraints = {
       echoCancellation: true,
       noiseSuppression: true,
-      autoGainControl: true, // boosts low-volume speech automatically
+      autoGainControl: true,
       channelCount: 1,
       sampleRate: 48000,
-      // Chrome-specific gain flags
       // @ts-ignore
       googAutoGainControl: true,
       // @ts-ignore
@@ -358,7 +385,7 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
           cb?.('');
         };
 
-        recorder.start(100); // 100ms chunks for faster data collection
+        recorder.start(100);
         setIsListening(true);
         console.log('[useSpeechRecognition] MediaRecorder started (Whisper fallback)');
       })
@@ -436,5 +463,22 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
     }
   }, [hasWebSpeech, stopWebSpeech, stopMediaRecorder]);
 
-  return { isListening, transcript, startListening, stopListening, isSupported, error, permissionDenied };
+  /** Send the pending transcript (mobile manual send) */
+  const sendPending = useCallback((onResult: (text: string) => void) => {
+    const text = pendingTranscript;
+    setPendingTranscript('');
+    setTranscript('');
+    onResult(text);
+  }, [pendingTranscript]);
+
+  /** Clear pending transcript without sending */
+  const clearPending = useCallback(() => {
+    setPendingTranscript('');
+    setTranscript('');
+    finalTranscriptRef.current = '';
+    interimTranscriptRef.current = '';
+    onResultCallbackRef.current = null;
+  }, []);
+
+  return { isListening, transcript, pendingTranscript, startListening, stopListening, sendPending, clearPending, isSupported, error, permissionDenied };
 }
